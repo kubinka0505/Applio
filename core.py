@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import argparse
+import requests
 import subprocess
 from functools import lru_cache
 from urllib import parse, request
@@ -489,6 +490,25 @@ def run_extract_script(
 
 
 # Train
+def download_from_hfco(url: str, save_path: str = None):
+    """
+    Downloads a file from a Hugging Face direct link.
+
+    Args:
+        url (str): The full URL to the file (e.g., model weights, config, etc.).
+        save_path (str, optional): Local path to save the file. If None, uses filename from URL.
+    """
+    if not save_path:
+        save_path = os.path.basename(url)
+    print(f"Downloading from: {url}")
+
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+
+    with open(save_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
 def run_train_script(
     model_name: str,
     save_every_epoch: int,
@@ -521,6 +541,29 @@ def run_train_script(
                 raise ValueError(
                     "Please provide the path to the pretrained G and D models."
                 )
+
+            pretraineds_dir = os.path.join("rvc", "models", "pretraineds", "custom")
+
+            if g_pretrained_path.lower().startswith("http"):
+                g_pretrained_name = os.path.basename(g_pretrained_path)
+                g_pretrained_dir = os.path.join(
+                    pretraineds_dir,
+                    g_pretrained_path.split("//")[-1].split("/")[2]
+                )
+                g_pretrained_path_final = os.path.join(g_pretrained_dir, g_pretrained_name)
+                download_from_hfco(g_pretrained_path, g_pretrained_path_final)
+                g_pretrained_path = g_pretrained_path_final
+
+            if d_pretrained_path.lower().startswith("http"):
+                d_pretrained_name = os.path.basename(d_pretrained_path)
+                d_pretrained_dir = os.path.join(
+                    pretraineds_dir,
+                    d_pretrained_path.split("//")[-1].split("/")[2]
+                )
+                d_pretrained_path_final = os.path.join(d_pretrained_dir, d_pretrained_name)
+                download_from_hfco(d_pretrained_path, d_pretrained_path_final)
+                d_pretrained_path = d_pretrained_path_final
+
             pg, pd = g_pretrained_path, d_pretrained_path
     else:
         pg, pd = "", ""
