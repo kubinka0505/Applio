@@ -488,26 +488,51 @@ def run_extract_script(
 
     return f"Model {model_name} extracted successfully."
 
-
-# Train
-def download_from_hfco(url: str, save_path: str = None):
+def download_from_hfco(url: str, save_path: str = None, skip_if_exists: bool = False, hf_token: str = None):
     """
     Downloads a file from a Hugging Face direct link.
 
     Args:
-        url (str): The full URL to the file (e.g., model weights, config, etc.).
-        save_path (str, optional): Local path to save the file. If None, uses filename from URL.
+        url (str): The full Hugging Face URL (e.g., https://huggingface.co/username/model/resolve/main/file.pth).
+        save_path (str, optional): Path to save the file.
+            - If a directory, saves file inside it using filename from URL.
+            - If a file path, saves to that path.
+            - If None, uses filename from URL in current directory.
+        skip_if_exists (bool): If True, skip download if file already exists.
+        hf_token (str, optional): Hugging Face access token for private files.
     """
-    if not save_path:
-        save_path = os.path.basename(url)
-    print(f"Downloading from: {url}")
+    filename = os.path.basename(url)
 
-    response = requests.get(url, stream=True)
+    if save_path:
+        if save_path.endswith("/") or os.path.isdir(save_path):
+            os.makedirs(save_path, exist_ok = True)
+            final_path = os.path.join(save_path, filename)
+        elif "." in os.path.basename(save_path):
+            os.makedirs(os.path.dirname(save_path), exist_ok = True)
+            final_path = save_path
+        else:
+            os.makedirs(save_path, exist_ok = True)
+            final_path = os.path.join(save_path, filename)
+    else:
+        final_path = filename
+
+    if skip_if_exists and os.path.exists(final_path):
+        print(f"File already exists, skipping: {final_path}")
+        return
+
+    headers = {}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+
+    print(f"Downloading from: {url}")
+    response = requests.get(url, headers = headers, stream = True)
     response.raise_for_status()
 
-    with open(save_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
+    with open(final_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size = 8192):
             f.write(chunk)
+
+    print(f"Saved to: {final_path}")
 
 def run_train_script(
     model_name: str,
@@ -529,6 +554,7 @@ def run_train_script(
     d_pretrained_path: str = None,
     vocoder: str = "HiFi-GAN",
     checkpointing: bool = False,
+	auth_token: str = None,
 ):
 
     if pretrained == True:
@@ -550,8 +576,10 @@ def run_train_script(
                     pretraineds_dir,
                     g_pretrained_path.split("//")[-1].split("/")[2]
                 )
+
                 g_pretrained_path_final = os.path.join(g_pretrained_dir, g_pretrained_name)
-                download_from_hfco(g_pretrained_path, g_pretrained_path_final)
+                download_from_hfco(g_pretrained_path, g_pretrained_path_final, auth_token)
+
                 g_pretrained_path = g_pretrained_path_final
 
             if d_pretrained_path.lower().startswith("http"):
@@ -560,8 +588,10 @@ def run_train_script(
                     pretraineds_dir,
                     d_pretrained_path.split("//")[-1].split("/")[2]
                 )
+
                 d_pretrained_path_final = os.path.join(d_pretrained_dir, d_pretrained_name)
-                download_from_hfco(d_pretrained_path, d_pretrained_path_final)
+                download_from_hfco(d_pretrained_path, d_pretrained_path_final, auth_token)
+
                 d_pretrained_path = d_pretrained_path_final
 
             pg, pd = g_pretrained_path, d_pretrained_path
@@ -1996,6 +2026,12 @@ def parse_arguments():
         required=False,
     )
     train_parser.add_argument(
+        "-at", "--auth-token",
+        type=str,
+        help="HuggingFace Authorization token. Used in pretrains downloading.",
+        default=""
+    )
+    train_parser.add_argument(
         "--save_every_epoch",
         type=int,
         help="Save the model every specified number of epochs.",
@@ -2413,6 +2449,7 @@ def main():
                 d_pretrained_path=args.d_pretrained_path,
                 vocoder=args.vocoder,
                 checkpointing=args.checkpointing,
+                auth_token=args.auth_token
             )
         elif args.mode == "index":
             run_index_script(
