@@ -700,6 +700,8 @@ def train_and_evaluate(
                     grad_norm_d = commons.grad_norm(net_d.parameters())
                     optim_d.step()
 
+            net_d.requires_grad_(False)
+
             with torch.amp.autocast(
                 device_type="cuda", enabled=use_amp, dtype=train_dtype
             ):
@@ -752,6 +754,8 @@ def train_and_evaluate(
                 loss_gen_all.backward()
                 grad_norm_g = commons.grad_norm(net_g.parameters())
                 optim_g.step()
+
+            net_d.requires_grad_(True)
 
             global_step += 1
 
